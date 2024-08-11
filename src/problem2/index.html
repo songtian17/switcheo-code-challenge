@@ -1,0 +1,231 @@
+<html>
+
+<head>
+  <title>Fancy Form</title>
+  <link href="style.css" rel="stylesheet" />
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+
+<body>
+  <div id="app">
+    <form @submit.prevent>
+      <h5>Swap</h5>
+      <div class="amount-section-wrapper">
+        <div class="amount-section">
+          <div class="amount-container">
+            <div class="amount-input-wrapper">
+              <label for="input-amount-field">Amount to send</label>
+              <input id="input-amount-field" type="number" v-model="formData.inputAmount"
+                @input="handleInput('inputAmount', calculateOutputAmount)" />
+            </div>
+            <div class="token-info" @click="openTokenDialog('input')">
+              <img class="token-image" :src="getTokenImage(formData.inputToken)" alt="Input Token">
+              <p class="token-name">{{ formData.inputToken }}</p>
+              <svg class="icon-svg" xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="m7 10l5 5l5-5z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <button class="reverse-button" type="button" @click="switchTokens">
+          <svg class="icon-svg" xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24">
+            <path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99zM9 3L5 6.99h3V14h2V6.99h3z" />
+          </svg>
+        </button>
+
+        <div class="amount-section">
+          <div class="amount-container">
+            <div class="amount-input-wrapper">
+              <label for="output-amount-field">Amount to receive</label>
+              <input id="output-amount-field" type="number" v-model="formData.outputAmount"
+                @input="handleInput('outputAmount', calculateInputAmount)" @blur="handleBlur('outputAmount')" />
+            </div>
+            <div class="token-info" @click="openTokenDialog('output')">
+              <img class="token-image" :src="getTokenImage(formData.outputToken)" alt="Output Token">
+              <p class="token-name">{{ formData.outputToken }}</p>
+              <svg class="icon-svg" xmlns="http://www.w3.org/2000/svg" width="16px" height="16px" viewBox="0 0 24 24">
+                <path fill="currentColor" d="m7 10l5 5l5-5z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="confirm-button" type="button">CONFIRM SWAP</button>
+    </form>
+
+    <dialog class="modal" ref="dialog" @click.self="closeDialog">
+      <div class="search-bar">
+        <input type="text" placeholder="Search" v-model="searchQuery">
+      </div>
+      <div class="token-list-wrapper">
+        <div class="token-list">
+          <div v-for="token in filteredTokens" :key="token" class="token-row" @click="selectToken(token)">
+            <img :src="getTokenImage(token)" :alt="token">
+            <span>{{ token }}</span>
+          </div>
+          <div v-if="filteredTokens.length == 0" class="centered">
+            <span>No tokens match your query.</span>
+          </div>
+        </div>
+      </div>
+    </dialog>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed } = Vue;
+
+    createApp({
+      setup() {
+        const tokenBaseURL = 'https://raw.githubusercontent.com/Switcheo/token-icons/main/tokens/';
+        const formData = reactive({
+          inputAmount: 0,
+          outputAmount: 0,
+          inputToken: 'USDC',
+          outputToken: 'ATOM'
+        });
+        const searchQuery = ref('');
+        const dialog = ref(null);
+        const selectingTokenFor = ref('input');
+        const tokenData = reactive({
+          prices: {},
+          tokens: []
+        });
+        // tokens are excluded because their svg images are not available
+        const excludedTokens = ['STEVMOS', 'RATOM', 'STOSMO', 'STATOM', 'STLUNA'];
+
+        fetch('https://interview.switcheo.com/prices.json')
+          .then(response => response.json())
+          .then(data => {
+            tokenPrices = data.reduce((acc, token) => {
+              if (excludedTokens.includes(token.currency)) return acc;
+              acc[token.currency] = token.price;
+              return acc;
+            }, {});
+            tokenData.prices = tokenPrices
+            tokenData.tokens = Object.keys(tokenPrices);
+          })
+          .catch(error => console.error('Error fetching the JSON data:', error));
+
+        // Filter tokens based on search query
+        const filteredTokens = computed(() => {
+          return tokenData.tokens.filter(token => token.toLowerCase().includes(searchQuery.value.toLowerCase()));
+        });
+
+        const openTokenDialog = (type) => {
+          selectingTokenFor.value = type;
+          dialog.value.showModal();
+        };
+
+        const closeDialog = () => {
+          dialog.value.close();
+        };
+
+        // Select token from the selection list in dialog
+        const selectToken = (token) => {
+          if (selectingTokenFor.value === 'input') {
+            formData.inputToken = token;
+          } else {
+            formData.outputToken = token;
+          }
+          closeDialog();
+          calculateOutputAmount();
+        };
+
+        const calculateOutputAmount = () => {
+          const amountToSend = parseFloat(formData.inputAmount);
+
+          if (formData.inputToken && formData.outputToken && amountToSend) {
+            const inputTokenPrice = tokenData.prices[formData.inputToken];
+            const outputTokenPrice = tokenData.prices[formData.outputToken];
+            if (inputTokenPrice && outputTokenPrice) {
+              const amountToReceive = (amountToSend * inputTokenPrice) / outputTokenPrice;
+              formData.outputAmount = amountToReceive.toFixed(6);
+            } else {
+              formData.outputAmount = 0;
+            }
+          } else {
+            formData.outputAmount = 0;
+          }
+        };
+
+        const calculateInputAmount = () => {
+          const amountToReceive = parseFloat(formData.outputAmount);
+
+          if (formData.inputToken && formData.outputToken && amountToReceive) {
+            const inputTokenPrice = tokenData.prices[formData.inputToken];
+            const outputTokenPrice = tokenData.prices[formData.outputToken];
+            if (inputTokenPrice && outputTokenPrice) {
+              const amountToSend = (amountToReceive * outputTokenPrice) / inputTokenPrice;
+              formData.inputAmount = amountToSend.toFixed(6);
+            } else {
+              formData.inputAmount = 0;
+            }
+          } else {
+            formData.inputAmount = 0;
+          }
+        };
+
+        // Switch the input and output tokens
+        const switchTokens = () => {
+          const tempToken = formData.inputToken;
+          formData.inputToken = formData.outputToken;
+          formData.outputToken = tempToken;
+          calculateOutputAmount();
+        };
+
+        // cache token images
+        const getTokenImage = (currency) => {
+          const cachedImage = localStorage.getItem(`tokenImage-${currency}`);
+          if (cachedImage) {
+            return cachedImage;
+          } else {
+            const imageUrl = `${tokenBaseURL}${currency}.svg`;
+            fetch(imageUrl)
+              .then(response => response.blob())
+              .then(blob => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  localStorage.setItem(`tokenImage-${currency}`, reader.result);
+                };
+                reader.readAsDataURL(blob);
+              })
+              .catch(error => console.error('Error fetching the SVG:', error));
+            return imageUrl;
+          }
+        };
+
+        // Handle input to prevent multiple zeros and negative values
+        const handleInput = (field, callback) => {
+          if (formData[field] === '' || formData[field] < 0) {
+            formData[field] = 0;
+          } else {
+            formData[field] = formData[field].toString().replace(/^0+/, '0');
+          }
+          callback();
+        };
+
+        return {
+          tokenBaseURL,
+          formData,
+          searchQuery,
+          dialog,
+          selectingTokenFor,
+          tokenData,
+          filteredTokens,
+          openTokenDialog,
+          closeDialog,
+          selectToken,
+          calculateOutputAmount,
+          calculateInputAmount,
+          switchTokens,
+          getTokenImage,
+          handleInput,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+
+</html>
